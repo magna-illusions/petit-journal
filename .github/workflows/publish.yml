@@ -1,0 +1,47 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+# Trusted publishing: npm exchanges the OIDC token for a short-lived publish token, and adds
+# provenance on its own. No npm token is stored anywhere.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, so origin/main is there to check the tag against.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse a tag that is not on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # Trusted publishing needs npm 11.5.1 or later, which Node 24 ships.
+          node-version: '24'
+          check-latest: true
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Refuse a tag that is not package.json's version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+      - run: npm --version
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm pack --dry-run
+      - run: npm publish

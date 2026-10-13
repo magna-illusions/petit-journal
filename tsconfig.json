@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "target": "es2022",
+    "strict": true,
+    // The README's examples are plain JavaScript, with parameters that carry
+    // no types. test/types.ts annotates everything it relies on.
+    "noImplicitAny": false,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": false,
+    "types": []
+  },
+  "files": ["test/types.ts", "examples/quickstart.js", "examples/encrypting.js"]
+}

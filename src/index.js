@@ -1,0 +1,8 @@
+export { createEventStore } from './pg/store.js'
+export { openEventStore } from './pg/open.js'
+export { ensureSchema } from './schema/schema.js'
+export { createMockEventStore } from './mock/mock.js'
+export { defineProjection } from './projection/define.js'
+export { WrongExpectedSeqError } from './append.js'
+export { UnknownSeqError } from './redaction/redaction.js'
+export { CompactedLogError } from './compaction/compaction.js'

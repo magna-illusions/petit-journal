@@ -1,0 +1,56 @@
+{
+  "name": "petit-journal",
+  "version": "1.0.0",
+  "description": "Append-only event store on PostgreSQL: an event log and a folded projection per stream, changed together under a per-stream lock. No dependencies; you inject the pg pool.",
+  "keywords": [
+    "event-sourcing",
+    "event-store",
+    "postgres",
+    "postgresql",
+    "pg",
+    "append-only",
+    "projection",
+    "compaction",
+    "optimistic-concurrency",
+    "idempotency"
+  ],
+  "homepage": "https://github.com/magna-illusions/petit-journal#readme",
+  "bugs": {
+    "url": "https://github.com/magna-illusions/petit-journal/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/magna-illusions/petit-journal.git"
+  },
+  "license": "MIT",
+  "author": "Magna Illusions AB",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "src",
+    "!src/**/*.test.js",
+    "types/index.d.ts",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "test": "node --test 'src/**/*.test.js'",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "typescript": "^7.0.2"
+  }
+}
