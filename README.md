@@ -74,7 +74,7 @@ first; `createEventStore` is synchronous and never runs DDL. `options`:
 
 ### `defineProjection(store, { initial, reduce, keep?, redacted? })`
 
-Folds a stream's events into its projection row, on either store. `initial` is the state of a
+Folds a stream's events into its projection row, on the pg store or the mock. `initial` is the state of a
 stream never written; each fold from it starts from a fresh copy. `reduce(state, event)` returns
 the next state, synchronously. `keep`, when set, compacts after each save. Redacted events are
 skipped, or folded with `redacted: 'fold'`.
@@ -92,7 +92,7 @@ skipped, or folded with `redacted: 'fold'`.
 - `decide` runs under the stream's lock, so keep it quick. It gets a copy of the state.
 - If something appended through the store's own methods, the projection catches up on its next
   read or write.
-- A fold that needs events compaction has removed throws `CompactedLogError`.
+- If a fold needs events that compaction has removed, it throws `CompactedLogError`.
 - `reduce` must return the next state. Returning `undefined` or a promise throws.
 
 #### Appending and redacting in one transaction
@@ -136,6 +136,7 @@ that something was forgotten.
 
 Use the store's own methods when `defineProjection` does not fit: a projection row with no events
 behind it, a custom re-fold, or your own SQL in the same transaction.
+
 Every method takes a `StreamId`, `{ ownerId, stream, subjectId }`: the partition, the kind of log
 and the aggregate. An `ownerId` in the standard uuid form (8-4-4-4-12, braces optional) is written
 lowercase without braces; any other id, 32 bare hex digits included, is kept exactly as given.
@@ -176,7 +177,7 @@ Both stores refuse malformed input with a `TypeError` before writing; see the
 [design notes](https://github.com/magna-illusions/petit-journal/blob/main/docs/design.md).
 
 Also exported: `createMockEventStore(options?)`, `ensureSchema(pool, { tables }?)`, and the errors
-`WrongExpectedSeqError`, `UnknownSeqError` (from `redact`; nothing is redacted) and
+`WrongExpectedSeqError`, `UnknownSeqError` (thrown by `redact` for a seq the stream does not hold; nothing is redacted) and
 `CompactedLogError`.
 
 ### Transactions
