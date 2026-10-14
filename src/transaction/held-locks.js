@@ -24,8 +24,19 @@ const heldLocks = {
       )
     }
   },
-  async holding(key, run) {
-    const record = { key, live: true }
+  // eraseOwner deletes rows the transaction may have locked, and the
+  // transaction's work would write past the erase: refused the same way.
+  refuseIfOwnerHeld(ownerId) {
+    const record = held.getStore()?.find((r) => r.live && r.stream.ownerId === ownerId)
+    if (record) {
+      throw new TypeError(
+        `eraseOwner inside a transaction on ${describeStream(record.stream)} would erase that transaction's owner: ` +
+        'erase once the transaction has ended, with writes for that owner stopped',
+      )
+    }
+  },
+  async holding(key, stream, run) {
+    const record = { key, stream, live: true }
     try {
       return await held.run([...(held.getStore() ?? []), record], run)
     } finally {

@@ -19,6 +19,7 @@ function fakePool() {
   const onQuery = async (text, params, via) => {
     calls.push({ text, params, via })
     if (text.includes('MAX(seq)')) return { rows: [{ max: '0' }], rowCount: 1 }
+    if (text.includes('erased_events')) return { rows: [{ events: '0', projections: '0' }], rowCount: 1 }
     if (text.includes('INSERT INTO "domain_events"')) {
       return { rows: [{ id: 'e1', owner_id: 'a1', stream: 'ledger', subject_id: 'a1', seq: String(params[3]), type: params[4], payload: params[5], occurred_at: new Date(0), source: null }], rowCount: 1 }
     }
@@ -333,5 +334,16 @@ test('both stores: a write to the outer stream from a nested transaction on anot
     const other = { ...STREAM, subjectId: 'b2' }
     await assert.rejects(store.transaction(STREAM, () => store.transaction(other, () => store.append(STREAM, { type: 'A', payload: {} }))),
       /a store call inside a transaction on ledger\/a1 would wait for that transaction's own lock/)
+  }
+})
+
+// eraseOwner deletes rows a transaction on one of the owner's streams may hold
+// row locks on, and that transaction waits for its work: a deadlock. And an
+// erase that the work then writes past would not erase. So it is refused.
+test('both stores: eraseOwner inside a transaction on one of that owner\'s streams throws at once', { timeout: 2000 }, async () => {
+  for (const store of [createEventStore(fakePool()), createMockEventStore()]) {
+    await assert.rejects(store.transaction(STREAM, () => store.eraseOwner(STREAM.ownerId)),
+      /eraseOwner inside a transaction on ledger\/a1 would erase that transaction's owner/)
+    await store.transaction(STREAM, () => store.eraseOwner('b2'))
   }
 })

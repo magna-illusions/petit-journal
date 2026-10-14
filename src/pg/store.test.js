@@ -457,3 +457,26 @@ test('both stores: a StreamId missing a part throws on every method, naming what
     await assert.rejects(() => store.maxSeq({ ownerId: 'a1', stream: '' }), /missing stream, subjectId/)
   }
 })
+
+// One statement is one transaction in Postgres: both deletes commit together,
+// with no client to hold and no lock to take.
+test('eraseOwner deletes the owner from both configured tables in one statement and returns the counts', async () => {
+  const pool = makePool(() => ({ rows: [{ events: '5', projections: '2' }], rowCount: 1 }))
+  const decode = () => { throw new Error('nothing is decoded') }
+  const store = createEventStore(pool, { codec: { encode: (v) => v, decode }, tables: { events: 'app.ledger_events', projections: 'app.ledger_state' } })
+  assert.deepEqual(await store.eraseOwner('0B6C2F1E-8A4D-4C1B-9F3E-2D7A5C8E1B40'), { events: 5, projections: 2 })
+  assert.equal(pool.calls.length, 1)
+  const [{ text, params, via }] = pool.calls
+  assert.equal(via, 'pool')
+  assert.match(text, /DELETE FROM "app"\."ledger_events" WHERE owner_id = \$1/)
+  assert.match(text, /DELETE FROM "app"\."ledger_state" WHERE owner_id = \$1/)
+  assert.deepEqual(params, ['0b6c2f1e-8a4d-4c1b-9f3e-2d7a5c8e1b40'], 'the uuid as writes spell it')
+})
+
+test('both stores: eraseOwner refuses a missing owner before any SQL', async () => {
+  const pool = makePool(() => ({ rows: [], rowCount: 0 }))
+  for (const store of [createEventStore(pool), createMockEventStore()]) {
+    for (const ownerId of [undefined, null, '']) await assert.rejects(store.eraseOwner(ownerId), /eraseOwner needs an ownerId/)
+  }
+  assert.equal(pool.calls.length, 0)
+})

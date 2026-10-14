@@ -88,6 +88,12 @@ export interface AppendResult {
   appended: boolean
 }
 
+/** What eraseOwner deleted: how many events and how many projection rows. */
+export interface EraseOwnerResult {
+  events: number
+  projections: number
+}
+
 /** Thrown by append when `expectedSeq` is not the stream's newest seq. */
 export class WrongExpectedSeqError extends Error {
   readonly name: 'WrongExpectedSeqError'
@@ -207,6 +213,13 @@ export interface EventStore {
    * projection: re-fold it in the same transaction (see the README).
    */
   redact(stream: StreamId, seqs: number[], options: RedactOptions): Promise<number[]>
+  /**
+   * Deletes every event and projection row of one owner, in all its streams,
+   * in one transaction. The owner is spelled as writes spell it. It takes no
+   * stream lock, so stop that owner's writes first; inside a transaction on one
+   * of its streams it throws a TypeError. Rows are deleted, never decoded.
+   */
+  eraseOwner(ownerId: string): Promise<EraseOwnerResult>
   loadEvents(stream: StreamId, afterSeq?: number): Promise<StoredEvent[]>
   loadProjection<S>(stream: StreamId): Promise<Projection<S> | null>
   saveProjection<S>(stream: StreamId, state: S, throughSeq: number): Promise<void>

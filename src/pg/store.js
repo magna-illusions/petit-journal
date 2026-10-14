@@ -1,5 +1,5 @@
 import { pruneUpToSeq, checkCompaction } from '../compaction/compaction.js'
-import { readStream, lockKey, describeStream, readAfterSeq } from '../stream-id.js'
+import { readStream, readOwner, lockKey, describeStream, readAfterSeq } from '../stream-id.js'
 import { encodeAppend, checkExpectedSeq, checkNextSeq } from '../append.js'
 import { checkProjection } from '../save-check.js'
 import { bindTransaction, endedError, checkWork } from '../transaction/transaction.js'
@@ -197,7 +197,7 @@ function createEventStore(pool, options) {
     try {
       await client.query('BEGIN')
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [key])
-      const result = await Promise.race([locks.holding(key, () => run(query)), watch.died])
+      const result = await Promise.race([locks.holding(key, stream, () => run(query)), watch.died])
       open = false
       await commit(client, stream)
       return result
@@ -265,9 +265,26 @@ function createEventStore(pool, options) {
 
   const locked = (stream, run) => withLock(stream, (query) => run(streamOps(query, codec, tables, stream)))
 
+  // Every row of one owner, in both tables, gone in one statement, which
+  // Postgres runs as one transaction. It takes no stream lock: the caller
+  // stops that owner's writes first, since a write after the erase would put
+  // data back anyway. Rows are deleted, never read, so the codec plays no part.
+  async function eraseOwner(ownerId) {
+    ownerId = readOwner(ownerId)
+    locks.refuseIfOwnerHeld(ownerId)
+    const res = await pool.query(
+      `WITH erased_events AS (DELETE FROM ${tables.events} WHERE owner_id = $1 RETURNING 1),
+            erased_projections AS (DELETE FROM ${tables.projections} WHERE owner_id = $1 RETURNING 1)
+       SELECT (SELECT COUNT(*) FROM erased_events) AS events, (SELECT COUNT(*) FROM erased_projections) AS projections`,
+      [ownerId],
+    )
+    return { events: Number(res.rows[0].events), projections: Number(res.rows[0].projections) }
+  }
+
   return {
     append,
     redact,
+    eraseOwner,
     transaction,
     loadEvents: async (stream, afterSeq) => onPool(stream).loadEvents(afterSeq),
     loadProjection: async (stream) => onPool(stream).loadProjection(),

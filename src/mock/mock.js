@@ -2,7 +2,7 @@
 // that run end to end without one. It has the interface and the contract of
 // createEventStore, so code that uses a store runs unchanged on either.
 
-import { readStream, lockKey, readAfterSeq } from '../stream-id.js'
+import { readStream, readOwner, lockKey, readAfterSeq } from '../stream-id.js'
 import { encodeAppend, checkExpectedSeq, checkNextSeq } from '../append.js'
 import { checkProjection } from '../save-check.js'
 import { pruneUpToSeq, checkCompaction } from '../compaction/compaction.js'
@@ -48,7 +48,7 @@ function createMockEventStore(options) {
   function withLock(stream, run) {
     const key = lockKey(stream)
     locks.refuseIfHeld(key, stream)
-    const result = (tails.get(key) ?? Promise.resolve()).then(() => locks.holding(key, () => restoringOnThrow(stream, run)))
+    const result = (tails.get(key) ?? Promise.resolve()).then(() => locks.holding(key, stream, () => restoringOnThrow(stream, run)))
     const tail = result.catch(() => {}).then(() => {
       if (tails.get(key) === tail) tails.delete(key)
     })
@@ -199,9 +199,24 @@ function createMockEventStore(options) {
     return withLock(stream, (scope) => work(bindTransaction(stream, streamOps(stream, scope), encodeToStore, noSql)))
   }
 
+  // As in the pg store: no stream lock, nothing decoded, and all of it at once.
+  async function eraseOwner(ownerId) {
+    ownerId = readOwner(ownerId)
+    locks.refuseIfOwnerHeld(ownerId)
+    const erased = { events: 0, projections: 0 }
+    for (const [key, st] of streams) {
+      if (JSON.parse(key)[0] !== ownerId) continue
+      erased.events += st.events.length
+      if (st.projection) erased.projections += 1
+      streams.delete(key)
+    }
+    return erased
+  }
+
   return {
     append,
     redact,
+    eraseOwner,
     transaction,
     loadEvents: async (stream, afterSeq) => ops(stream).loadEvents(afterSeq),
     loadProjection: async (stream) => ops(stream).loadProjection(),

@@ -31,4 +31,10 @@ async function forgetting(store: declared.EventStore, stream: declared.StreamId)
   return outcome
 }
 
-export { forgetting, exportsMatch, storeMethodsMatch, mockMethodsMatch, projectionMethodsMatch, surface, errors }
+// Erasing an owner, as a consumer reads the result.
+async function erasing(store: declared.EventStore) {
+  const erased: declared.EraseOwnerResult = await store.eraseOwner('o')
+  return erased.events + erased.projections
+}
+
+export { forgetting, erasing, exportsMatch, storeMethodsMatch, mockMethodsMatch, projectionMethodsMatch, surface, errors }

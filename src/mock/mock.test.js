@@ -138,3 +138,38 @@ test('mock store: streams whose parts join to the same text around ":" stay sepa
   assert.equal(await s.loadProjection(b), null)
   assert.equal((await s.append(b, { type: 'B', payload: {} })).event.seq, 1)
 })
+
+test('mock store: eraseOwner deletes every stream of that owner, events and projections, and nothing of anyone else', async () => {
+  const s = createMockEventStore()
+  const owner = '0b6c2f1e-8a4d-4c1b-9f3e-2d7a5c8e1b40'
+  const ledger = { ownerId: owner, stream: 'ledger', subjectId: 'main' }
+  const settings = { ownerId: owner, stream: 'settings', subjectId: 'main' }
+  const other = { ownerId: 'someone-else', stream: 'ledger', subjectId: 'main' }
+  await s.append(ledger, { type: 'A', payload: {} }, { dedupeKey: 'req-1' })
+  await s.append(ledger, { type: 'A', payload: {} })
+  await s.saveProjection(ledger, { n: 2 }, 2)
+  await s.append(settings, { type: 'B', payload: {} })
+  await s.append(other, { type: 'A', payload: {} })
+  await s.saveProjection(other, { n: 1 }, 1)
+  await s.loadEvents({ ownerId: owner, stream: 'never', subjectId: 'written' })
+
+  assert.deepEqual(await s.eraseOwner(owner.toUpperCase()), { events: 3, projections: 1 }, 'another spelling of the uuid reaches the rows')
+  assert.deepEqual(await s.loadEvents(ledger), [])
+  assert.equal(await s.loadProjection(ledger), null)
+  assert.deepEqual(await s.loadEvents(settings), [])
+  assert.equal(await s.maxSeq(other), 1)
+  assert.deepEqual((await s.loadProjection(other)).state, { n: 1 })
+  const again = await s.append(ledger, { type: 'A', payload: {} }, { dedupeKey: 'req-1' })
+  assert.deepEqual([again.appended, again.event.seq], [true, 1], 'a fresh stream, its dedupe keys gone too')
+  assert.deepEqual(await s.eraseOwner('nobody'), { events: 0, projections: 0 })
+})
+
+test('mock store: eraseOwner decodes nothing, so it works when the codec cannot read the rows', async () => {
+  let readable = true
+  const codec = { encode: (v) => v, decode: (v) => { if (!readable) throw new Error('key destroyed'); return v } }
+  const s = createMockEventStore({ codec })
+  await s.append(STREAM, { type: 'A', payload: {} })
+  await s.saveProjection(STREAM, {}, 1)
+  readable = false
+  assert.deepEqual(await s.eraseOwner(STREAM.ownerId), { events: 1, projections: 1 })
+})
