@@ -24,7 +24,7 @@ test('readStream leaves 32 bare hex digits, and other hyphenations, exactly as g
   }
 })
 
-test('readStream keeps a lowercase uuid, and so its lock key, byte for byte', () => {
+test('readStream leaves a lowercase uuid as it is, so its lock key never changes', () => {
   assert.equal(lockKey(readStream(at(LOWER))), `${LOWER}:ledger:main`)
 })
 

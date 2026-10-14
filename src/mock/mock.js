@@ -34,7 +34,7 @@ function createMockEventStore(options) {
     return streams.get(key)
   }
 
-  // The map holds what jsonb would hand back — the encoded value, through JSON —
+  // The map holds what jsonb would hand back (the encoded value, through JSON),
   // and every read decodes a copy of it under the caller's stream. So a codec
   // bug (bytes, a BigInt, a decode that throws) fails in a no-DB test too, and
   // mutating a value on either side of a call never changes the stream.

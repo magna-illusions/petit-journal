@@ -3,8 +3,8 @@ import { checkStorableText } from '../storable-text.js'
 
 // The optional payload codec: the caller's encode/decode, applied to every
 // event payload and projection state on its way into and out of storage. The
-// store knows nothing about what the codec does — encryption, compression,
-// versioning — only that it gets a JSON value back to store and hands the
+// store knows nothing about what the codec does (encryption, compression,
+// versioning), only that it gets a JSON value back to store and hands the
 // stored JSON value back to decode. No codec means no call at all: the value is
 // stored as plain JSON.
 //

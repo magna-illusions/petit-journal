@@ -290,8 +290,8 @@ test('update appends what decide returns, folded and saved; an empty result writ
   }
 })
 
-// A note-taking projection whose forget path appends a Forgot event and
-// redacts the notes that held the words, in one transaction.
+// A note-taking projection. Its forget plan appends a Forgot event and redacts
+// the notes that contain a given word, in one transaction.
 const note = (text) => ({ type: 'Noted', payload: { text } })
 const notes = {
   initial: {},
@@ -318,7 +318,7 @@ test('update can append and redact earlier events in one transaction, choosing t
     const events = await store.loadEvents(STREAM)
     assert.deepEqual(events.map((e) => [e.seq, e.type, e.redacted ?? false]), [[1, 'Noted', true], [2, 'Noted', true], [3, 'Noted', false], [4, 'Forgot', false]], name)
     assert.deepEqual(events.slice(0, 2).map((e) => [e.payload.note, e.payload.reason]), [[1, 'forget secret'], [2, 'forget secret']], `${name}: a tombstone per group`)
-    assert.ok(!JSON.stringify(events).includes('a secret') && !JSON.stringify(events).includes('another secret'), `${name}: the words are gone`)
+    assert.ok(!JSON.stringify(events).includes('a secret') && !JSON.stringify(events).includes('another secret'), `${name}: no redacted text is left`)
     assert.deepEqual((await store.loadProjection(STREAM)).state, { 3: 'public' }, name)
   }
 })

@@ -186,7 +186,7 @@ test('compact is a no-op when nothing is prunable', async () => {
 })
 
 test('both stores: compact refuses a throughSeq or keep that is not an integer >= 0', async () => {
-  // A missing keep used to make the cutoff NaN, and compact silently deleted nothing.
+  // Unchecked, a missing keep would make the cutoff NaN, and compact would silently delete nothing.
   const pool = streamAt(200)
   for (const [name, store] of [['pg', createEventStore(pool)], ['mock', createMockEventStore()]]) {
     await assert.rejects(store.compact(STREAM, 200), /keep must be an integer >= 0/, `${name}: no keep`)
@@ -319,9 +319,9 @@ test('both stores: an event carrying dedupeKey or expectedSeq is refused, since 
   assert.ok(!texts(pool).some((t) => t.includes('INSERT')), 'pg: nothing reached the INSERT')
 })
 
-// The two stores used to disagree on what occurredAt means: Postgres reads a
-// zone-less time in its own time zone, and words such as 'now' at the moment
-// each retry lands. Only an instant is taken: a Date, or ISO 8601 with a zone.
+// Postgres reads a zone-less time in its own time zone, and words such as 'now'
+// at the moment each retry lands, so the mock could not agree with it. Only an
+// instant is taken: a Date, or ISO 8601 with a zone.
 test('both stores: occurredAt must be a Date or an ISO 8601 string with Z or an offset', async () => {
   const pool = streamAt(0)
   for (const [name, store] of [['pg', createEventStore(pool)], ['mock', createMockEventStore()]]) {

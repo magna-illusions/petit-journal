@@ -5,10 +5,10 @@ import { checkCompaction } from '../compaction/compaction.js'
 import { readRedaction } from '../redaction/redaction.js'
 
 // What store.transaction(stream, work) hands `work`: the stream's operations,
-// bound to the one client that holds the stream's lock — without the stream
-// argument, because a transaction is on one stream — plus that client's query
-// for the caller's own SQL. Shared by the pg and the mock store, so the two
-// cannot drift in shape.
+// bound to the one client that holds the stream's lock, plus that client's
+// query for the caller's own SQL. The operations take no stream argument, since
+// a transaction is on one stream. Shared by the pg and the mock store, so the
+// two cannot drift in shape.
 function bindTransaction(stream, ops, encode, query) {
   return {
     stream: { ownerId: stream.ownerId, stream: stream.stream, subjectId: stream.subjectId },
