@@ -58,8 +58,10 @@ Compaction deletes events the projection has folded, keeping the newest `keep`, 
 bounded. An optional codec can encrypt or compress payloads. `redact` replaces chosen payloads
 with a tombstone and keeps their `seq`, `type` and time.
 
-The [design notes](https://github.com/magna-illusions/petit-journal/blob/main/docs/design.md)
-explain each of these in depth.
+The [glossary](https://github.com/magna-illusions/petit-journal/blob/main/docs/glossary.md) defines
+these terms, and the
+[design notes](https://github.com/magna-illusions/petit-journal/blob/main/docs/design.md) explain
+each of them in depth.
 
 ## API
 
