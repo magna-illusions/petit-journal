@@ -523,7 +523,10 @@ would mean finding every stream first and holding one lock per stream. A write t
 erase can leave a stream that starts past seq 1, which a projection then refuses with
 `CompactedLogError`. Inside a transaction on one of the owner's streams, `eraseOwner` throws a
 `TypeError` at once. It could wait on rows that transaction has written, and the transaction's own
-writes would land after the erase.
+writes would land after the erase. The guard is process-wide, so it also refuses an erase of that
+owner through another store instance, which is rare and fails safe. Called inside a transaction on
+another owner's stream, `eraseOwner` runs on the pool, outside that transaction, so a rollback
+there does not undo it.
 
 Like `redact`, it reaches the live tables only. Everything in the next section applies to deleted
 rows too.
