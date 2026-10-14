@@ -1,6 +1,6 @@
 {
   "name": "petit-journal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Append-only event store on PostgreSQL: an event log and a folded projection per stream, changed together under a per-stream lock. No dependencies; you inject the pg pool.",
   "keywords": [
     "event-sourcing",
