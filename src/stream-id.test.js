@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readStream, lockKey } from './stream-id.js'
+import { readStream, readOwner, lockKey } from './stream-id.js'
 
 // Postgres reads a uuid in any of its accepted spellings as one value, so the
 // rows of one owner are one set however the id is written. The lock key is
@@ -38,4 +38,19 @@ test('readStream returns a copy and refuses a missing part', () => {
   const given = { ...at(LOWER), extra: 1 }
   assert.deepEqual(readStream(given), at(LOWER))
   assert.throws(() => readStream({ stream: 'ledger', subjectId: 'main' }), /StreamId is missing ownerId/)
+})
+
+// eraseOwner takes an owner on its own. It must reach the rows a write made, so
+// it spells the owner exactly as readStream does.
+test('readOwner spells an owner as readStream does', () => {
+  for (const ownerId of [LOWER, LOWER.toUpperCase(), `{${LOWER}}`, 'Tenant-A', 'd41d8cd98f00b204e9800998ecf8427e']) {
+    assert.equal(readOwner(ownerId), readStream(at(ownerId)).ownerId, ownerId)
+  }
+})
+
+test('readOwner refuses a missing or unstorable owner', () => {
+  for (const ownerId of [undefined, null, '']) {
+    assert.throws(() => readOwner(ownerId), /eraseOwner needs an ownerId/, String(ownerId))
+  }
+  assert.throws(() => readOwner('a\u0000b'), TypeError)
 })

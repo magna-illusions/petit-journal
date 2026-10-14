@@ -32,6 +32,16 @@ function readStream(stream) {
   return { ownerId: canonicalOwner(stream.ownerId), stream: stream.stream, subjectId: stream.subjectId }
 }
 
+// An owner on its own, for eraseOwner: checked as a StreamId's part is, and in
+// the same one spelling, or it would miss the rows the writes made.
+function readOwner(ownerId) {
+  if (ownerId === undefined || ownerId === null || ownerId === '') {
+    throw new TypeError('eraseOwner needs an ownerId')
+  }
+  checkStorableText(ownerId, 'ownerId')
+  return canonicalOwner(ownerId)
+}
+
 // The per-stream advisory lock key, in Postgres and in the mock. Kept
 // byte-identical across versions so writers on different releases of this
 // package still take one lock for one stream. Parts that contain ':' can join
@@ -54,4 +64,4 @@ function readAfterSeq(afterSeq) {
   throw new TypeError(`afterSeq must be an integer >= 0, or left out for every event, got ${afterSeq}`)
 }
 
-export { readStream, lockKey, describeStream, readAfterSeq }
+export { readStream, readOwner, lockKey, describeStream, readAfterSeq }
