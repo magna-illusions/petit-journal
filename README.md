@@ -137,8 +137,8 @@ that something was forgotten.
 Use the store's own methods when `defineProjection` does not fit: a projection row with no events
 behind it, a custom re-fold, or your own SQL in the same transaction.
 
-Every method takes a `StreamId`, `{ ownerId, stream, subjectId }`: the partition, the kind of log
-and the aggregate. An `ownerId` in the standard uuid form (8-4-4-4-12, braces optional) is written
+Every method but `eraseOwner` takes a `StreamId`, `{ ownerId, stream, subjectId }`: the
+partition, the kind of log and the aggregate. An `ownerId` in the standard uuid form (8-4-4-4-12, braces optional) is written
 lowercase without braces; any other id, 32 bare hex digits included, is kept exactly as given.
 
 | Method | Returns |
@@ -150,6 +150,7 @@ lowercase without braces; any other id, 32 bare hex digits included, is kept exa
 | `maxSeq(stream)` | The newest `seq`, or `0`. |
 | `compact(stream, throughSeq, keep)` | How many folded events it deleted, keeping the newest `keep`, the newest event, and anything past the saved projection. |
 | `redact(stream, seqs, { reason, tombstone? })` | The redacted seqs. Each payload becomes `{ ...tombstone, $redacted: true, reason, at }`. |
+| `eraseOwner(ownerId)` | `{ events, projections }`, the rows it deleted from every stream of that owner, in one transaction. Stop that owner's writes first. |
 | `transaction(stream, work)` | What `work` returned, after `COMMIT`. Rolls back and rethrows if `work` rejects. |
 
 Inside `transaction`, `work` gets a `tx` with the same methods minus the stream, plus
@@ -343,7 +344,7 @@ new pg.Pool({ connectionString, connectionTimeoutMillis: 5000, lock_timeout: 100
   either.
 - **Timestamps come back as ISO strings, to the millisecond.** `timestamptz` keeps microseconds;
   the string drops them.
-- **Redaction reaches the live tables only.** Dead row versions, WAL, CDC consumers, the
+- **Redaction and `eraseOwner` reach the live tables only.** Dead row versions, WAL, CDC consumers, the
   projection's previous row and backups keep the old payload;
   [crypto-shredding](#encrypting-payloads) reaches them all.
 - **A codec makes payloads opaque to SQL.** Filter on a clear column of your own, written in the

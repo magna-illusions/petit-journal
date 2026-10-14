@@ -449,8 +449,9 @@ apart.
 
 The log is append-only, with one exception: `redact` overwrites the payload of events already in
 it. It exists for "forget this one thing", such as a GDPR erasure request for a single fact, when
-the rest of the subject's history must stay. To erase everything about a subject, crypto-shred its
-key instead (see [what redaction does not reach](#what-redaction-does-not-reach)).
+the rest of the subject's history must stay. To erase a whole owner, use
+[`eraseOwner`](#erasing-an-owner), and crypto-shred its key to reach the copies no delete can (see
+[what redaction does not reach](#what-redaction-does-not-reach)).
 
 ```js
 await store.redact(stream, [7], { reason: 'erasure request 42' }) // → [7]
@@ -504,6 +505,28 @@ A full re-fold needs every event since the start. Once
 the pruned events. Remove the fact from the state yourself and save it in the same transaction as
 the redaction. A fact whose event was compacted away lives only in the projection, and is removed
 the same way.
+
+### Erasing an owner
+
+`eraseOwner(ownerId)` deletes every event and projection row of one owner, in all of its streams.
+It returns `{ events, projections }`, how many rows went from each table. Both deletes are one SQL
+statement, so they commit together or not at all. It is for an owner who leaves as a whole, such as
+an erasure request for an account.
+
+The owner is spelled as writes spell it, so a uuid in another case or with braces reaches the same
+rows. The codec plays no part: rows are deleted, never decoded, so it works after the owner's key
+is gone.
+
+It takes no stream lock. Stop that owner's writes before you erase, because a write that lands
+after the erase puts data back whatever the store does. Locking would not change that, and it
+would mean finding every stream first and holding one lock per stream. A write that races the
+erase can leave a stream that starts past seq 1, which a projection then refuses with
+`CompactedLogError`. Inside a transaction on one of the owner's streams, `eraseOwner` throws a
+`TypeError` at once. It could wait on rows that transaction has written, and the transaction's own
+writes would land after the erase.
+
+Like `redact`, it reaches the live tables only. Everything in the next section applies to deleted
+rows too.
 
 ### What redaction does not reach
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 (2026-10-14)
+
+- `store.eraseOwner(ownerId)`: deletes every event and projection row of one owner, in all of its
+  streams, in one transaction, and returns `{ events, projections }`. The owner is spelled as
+  writes spell it, and nothing is decoded. It takes no stream lock: stop that owner's writes
+  first. Inside a transaction on one of that owner's streams it throws a `TypeError`. Also on the
+  mock.
+
 ## 1.0.0 (2026-10-13)
 
 First release. petit-journal was developed inside a private codebase, where it runs in production.
