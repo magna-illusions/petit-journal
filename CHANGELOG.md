@@ -2,7 +2,9 @@
 
 ## 1.0.0 (2026-10-13)
 
-First release.
+First release. petit-journal was developed inside a private codebase, where it runs in production.
+The earlier history is tied to that code, so this repository starts from a single commit.
+Everything after it happens here in the open.
 
 - `openEventStore(pool, { codec, tables })`: creates the two tables and the dedupe index if they do
   not exist, then resolves to the store, so no write runs before its tables exist. Safe on every

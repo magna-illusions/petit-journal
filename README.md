@@ -3,11 +3,9 @@
 [![CI](https://github.com/magna-illusions/petit-journal/actions/workflows/ci.yml/badge.svg)](https://github.com/magna-illusions/petit-journal/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/petit-journal)](https://www.npmjs.com/package/petit-journal)
 
-Per-stream event logs with an atomic snapshot, on the Postgres you already run. Each stream gets
-an append-only log and one folded projection row, changed together in one transaction under a
-per-stream lock; you inject the `pg` pool and write the reducer.
-
-*Le Petit Journal* was a Paris daily that never rewrote yesterday's edition.
+An append-only event store for PostgreSQL. Each stream has an event log and one projection row
+with the folded state. Every write changes both in one transaction, under a per-stream lock. You
+pass in the `pg` pool and write the reducer; the package has no dependencies.
 
 ## Install
 
@@ -40,28 +38,28 @@ console.log(await ledger.state(account)) // { balance: 100 }
 await pool.end()
 ```
 
-`ledger.append` loads the projection, appends, folds the event on and saves the state, in one
-transaction under the stream's lock. Readers call `ledger.state`. In tests, use
-`createMockEventStore()` in place of `await openEventStore(pool)`: the same contract, in memory.
+`ledger.append` loads the projection, appends the event, folds it in and saves the state, all in
+one transaction under the stream's lock. `ledger.state` reads the state back. In tests, use
+`createMockEventStore()` in place of `await openEventStore(pool)`. It has the same contract, in
+memory.
 
 ## How it works
 
-- A **stream** is `{ ownerId, stream, subjectId }`. It has an event log, numbered
-  `seq = 1, 2, 3…`, and at most one projection row: the folded state and the highest `seq` in it.
-- **A projection is a reducer.** `defineProjection` gives a stream `append`, `update`, `state` and
-  `rebuild`; each write loads, appends, folds, saves and compacts as one transaction.
-- **Every write takes the stream's lock**, a Postgres advisory lock held to the end of its
-  transaction. Writers to one stream take turns; reads never wait.
-- **Appends are safe to retry and to race.** A repeated `dedupeKey` returns the first event;
-  `expectedSeq` appends only if the stream has not moved.
-- **History stays bounded.** Compaction deletes what the projection has folded, keeping the newest
-  `keep` events.
-- **Payloads can be sealed** by an optional codec, for encryption or compression.
-- **One fact can be forgotten.** `redact` replaces chosen payloads with a tombstone and keeps
-  their `seq`, `type` and time.
+A stream is `{ ownerId, stream, subjectId }`. It has an event log, numbered `seq = 1, 2, 3…`, and
+at most one projection row, which holds the folded state and the highest `seq` folded into it.
+`defineProjection` takes your reducer and gives you `append`, `update`, `state` and `rebuild`. Each
+write loads, appends, folds, saves and compacts in one transaction.
 
-The [design notes](https://github.com/magna-illusions/petit-journal/blob/main/docs/design.md) cover
-each of these in depth.
+Every write takes the stream's lock, a Postgres advisory lock held until the transaction ends.
+Writers to one stream take turns; reads never wait. A repeated `dedupeKey` returns the first event
+instead of appending again, and `expectedSeq` appends only if the stream has not moved.
+
+Compaction deletes events the projection has folded, keeping the newest `keep`, so history stays
+bounded. An optional codec can encrypt or compress payloads. `redact` replaces chosen payloads
+with a tombstone and keeps their `seq`, `type` and time.
+
+The [design notes](https://github.com/magna-illusions/petit-journal/blob/main/docs/design.md)
+explain each of these in depth.
 
 ## API
 
@@ -88,20 +86,20 @@ skipped, or folded with `redacted: 'fold'`.
 | `state(stream)` | The folded state, or `initial` for a stream never written. |
 | `rebuild(stream)` | Re-folds the whole log from `initial` and saves it, as after a reducer change. |
 
-- **A batch is one unit.** `expectedSeq` is the stream's `seq` before it, and `dedupeKey` goes on
-  its first event. A hit returns `duplicate: true` and folds nothing; an `update` checks the key
-  before it calls `decide`. An empty batch writes nothing and applies no option.
-- **`decide` runs under the stream's lock**, so keep it quick. It gets a copy of the state.
-- **A projection behind its log catches up** when something appended with the store's own methods.
-- **A compacted log is refused** where a fold needs events compaction removed, with a
-  `CompactedLogError`.
-- **`reduce` must return the next state.** `undefined` or a promise throws, rather than fold onto it.
+- A batch is one unit. `expectedSeq` is the stream's `seq` before the batch, and `dedupeKey` goes
+  on its first event. A hit returns `duplicate: true` and folds nothing; `update` checks the key
+  before it calls `decide`. An empty batch writes nothing and ignores its options.
+- `decide` runs under the stream's lock, so keep it quick. It gets a copy of the state.
+- If something appended through the store's own methods, the projection catches up on its next
+  read or write.
+- A fold that needs events compaction has removed throws `CompactedLogError`.
+- `reduce` must return the next state. Returning `undefined` or a promise throws.
 
 #### Appending and redacting in one transaction
 
-A forget path appends an event and redacts the earlier events that hold the words. `decide` reads
-the log through `ctx.loadEvents(afterSeq?)` and returns a plan `{ append, redact }`, where each
-`redact` group has its own `seqs`, `reason` and `tombstone`:
+To erase a fact and record that you did, `decide` can append an event and redact earlier ones in
+the same transaction. It reads the log through `ctx.loadEvents(afterSeq?)` and returns a plan
+`{ append, redact }`. Each `redact` group has its own `seqs`, `reason` and `tombstone`:
 
 ```js
 const forget = (word) => async (state, ctx) => {
@@ -116,19 +114,17 @@ const forget = (word) => async (state, ctx) => {
 await notes.update(stream, forget('secret')) // { ..., events: [the Forgot event], redacted: [1, 2] }
 ```
 
-The events are appended, the groups redacted, and the whole log re-folded from `initial` and saved,
-all in one transaction, so the saved state never holds a redacted fact. If any part fails, none of
-it is written.
+The append, the redactions and a re-fold of the whole log from `initial` happen in one
+transaction, so the saved state never holds a redacted fact. If any part fails, nothing is written.
 
-- **Only earlier events.** A redacted seq the stream did not hold before the update is a
-  `TypeError`.
-- **Only an uncompacted log, and no `keep`.** The re-fold needs every event since seq 1, so such a
-  plan is refused on a projection with `keep`, from its first call, and on a log compacted by
-  hand. Use the store's own methods then; see [redaction](#redaction).
-- **A plan with only `redact` is the atomic forget.** It appends nothing, so its `dedupeKey` is
-  never stored, and a retry redacts again: harmless, a tombstone replaced with a new time.
-- **A `dedupeKey` some other write already stored makes the plan a `duplicate`**, and its
-  redactions do not run. Give each forget a key of its own.
+- A plan can only redact events the stream held before the update. A later seq is a `TypeError`.
+- The re-fold needs every event since seq 1. So a plan that redacts is refused on a projection with
+  `keep`, from its first call, and on a log compacted by hand. Use the store's own methods then;
+  see [Redaction](#redaction).
+- A plan with only `redact` appends nothing, so its `dedupeKey` is never stored and a retry redacts
+  again. That is harmless: the tombstone gets a new time.
+- If another write already stored the plan's `dedupeKey`, the plan is a `duplicate` and its
+  redactions do not run. Give each forget its own key.
 
 #### Folding redacted events
 
@@ -138,8 +134,8 @@ that something was forgotten.
 
 ### Store methods
 
-`defineProjection` covers the usual cycle. The store's own methods are the escape hatch: a
-projection row with no events behind it, a custom re-fold, your own SQL in the same transaction.
+Use the store's own methods when `defineProjection` does not fit: a projection row with no events
+behind it, a custom re-fold, or your own SQL in the same transaction.
 Every method takes a `StreamId`, `{ ownerId, stream, subjectId }`: the partition, the kind of log
 and the aggregate. An `ownerId` in the standard uuid form (8-4-4-4-12, braces optional) is written
 lowercase without braces; any other id, 32 bare hex digits included, is kept exactly as given.
@@ -187,20 +183,19 @@ Also exported: `createMockEventStore(options?)`, `ensureSchema(pool, { tables }?
 
 `transaction` takes a connection, begins, takes the stream's lock and runs `work(tx)`. Inside it:
 
-- **Await every `tx` call.** One that lands after `work` returned rejects.
-- **Use `tx`, not `store`, for that stream.** A `store` write would wait for the lock `work` holds,
-  so it throws at once; a `store` read misses what `work` has not committed.
-- **Keep it short.** Do slow work first, and re-check with `expectedSeq`.
+- Await every `tx` call. One that runs after `work` has returned rejects.
+- Use `tx`, not `store`, for that stream. A `store` write would wait for the lock `work` holds, so
+  it throws at once. A `store` read misses what `work` has not committed.
+- Keep it short. Do slow work before the transaction, and re-check with `expectedSeq`.
 
 ## Schema
 
-Two ways to get the tables. `await openEventStore(pool)` creates them at startup if they are
-missing. If you run your own migrations, put the SQL below in one and use `createEventStore(pool)`,
-which never touches the schema. `ensureSchema(pool)` runs the same setup on its own, for a
-migration script or a test.
+`await openEventStore(pool)` creates the tables at startup if they are missing. If you run your
+own migrations, put the SQL below in one and use `createEventStore(pool)`, which never touches the
+schema. `ensureSchema(pool)` runs the same setup on its own, for a migration script or a test.
 
-Setup is safe on every boot, from several processes at once, and fails at boot with the reason. It
-creates exactly this:
+Setup is safe on every boot, even from several processes at once. If it fails, it fails at boot
+and says why. It creates exactly this:
 
 ```sql
 CREATE TABLE IF NOT EXISTS "domain_events" (
@@ -236,9 +231,9 @@ CREATE TABLE IF NOT EXISTS "domain_projections" (
 `TEXT`; in your own migrations it may be `UUID` if every owner is one. You may add columns of your
 own to either table.
 
-Other names are an option away: `createEventStore(pool, { tables: { events: 'ledger_events',
-projections: 'app.ledger_state' } })`. The rules for names, and for the index `openEventStore`
-creates beside an existing table, are in the design notes.
+To use other table names, pass `tables`: `createEventStore(pool, { tables: { events:
+'ledger_events', projections: 'app.ledger_state' } })`. The design notes give the naming rules, and
+say when `openEventStore` adds an index to an existing table.
 
 ## Retry-safe writes
 
@@ -260,8 +255,8 @@ const first = await deposit(request)  // { events: [the event], duplicate: false
 const again = await deposit(request)  // { events: [], duplicate: true, state }: nothing folded twice
 ```
 
-A key protects only while its event is in the log: compaction deletes the key with the event. Keep
-`keep` above the number of events a stream takes within your longest redelivery window.
+A key only protects while its event is still in the log, because compaction deletes both. Set
+`keep` above the number of events a stream receives during your longest redelivery window.
 
 ## Redaction
 
@@ -292,27 +287,30 @@ same transaction as the redaction.
 
 ## Encrypting payloads
 
-The codec's main use.
+Encryption is the codec's main use.
 [`examples/encrypting.js`](https://github.com/magna-illusions/petit-journal/blob/main/examples/encrypting.js)
-seals every payload and state with AES-256-GCM from `node:crypto`, under a key per owner from your
-`keyFor(ownerId)`, backed by your KMS or secret store. Pass it as
-`openEventStore(pool, { codec: encryptingCodec(keyFor) })`. A wrong key, a tampered or
-truncated value, or one copied from another stream or event type fails `decode`, and the store
-call rejects with the stream, seq and type. Also:
+seals every payload and state with AES-256-GCM from `node:crypto`. Each owner has its own key,
+which your `keyFor(ownerId)` fetches from your KMS or secret store. Pass it as
+`openEventStore(pool, { codec: encryptingCodec(keyFor) })`. A wrong key fails `decode`, and so does
+a value that was tampered with, truncated, or copied from another stream or event type. The store
+call then rejects with the stream, seq and type.
 
-- **Same-type swaps go unnoticed.** Two events of the same type in one stream can be swapped for
-  each other, since `seq` is not known at encode time.
-- **Length shows.** A ciphertext is as long as its plaintext, plus a fixed overhead.
-- **A key seals at most about 2³² values.** Past that, the chance of a repeated random 96-bit IV
-  exceeds NIST's 2⁻³² bound, and a repeated IV breaks GCM. One key per owner keeps each count small.
-- **Rows written before the codec are plaintext,** and fail `decode`. Re-encode them first.
+The example has limits:
 
-**Crypto-shredding.** Delete an owner's key and every payload and state of theirs is unreadable
-everywhere, including backups, WAL and dead row versions, which `redact` cannot reach. It forgets a
+- Two events of the same type in one stream can be swapped without detection, since `seq` is not
+  known at encode time.
+- A ciphertext is as long as its plaintext plus a fixed overhead, so length shows.
+- A key should seal at most about 2³² values. Past that, the chance of a repeated random 96-bit IV
+  exceeds NIST's 2⁻³² bound, and a repeated IV breaks GCM. A key per owner keeps each count small.
+- Rows written before you added the codec are plaintext and fail `decode`. Re-encode them first.
+
+Deleting an owner's key makes every payload and state of theirs unreadable, including in backups,
+WAL and dead row versions, which `redact` cannot reach. This is crypto-shredding. It forgets a
 whole owner, not one fact.
 
-**What stays in clear:** each event's `type`, `source`, `dedupe_key` and `occurred_at`, and
-`owner_id`, `stream` and `subject_id`. Keep personal data out of them.
+Neither the codec nor `redact` touches each event's `type`, `source`, `dedupe_key` and
+`occurred_at`, or the `owner_id`, `stream` and `subject_id`. Keep personal data out of them: a
+dedupe key built from an email address outlives both.
 
 ## Timeouts
 
@@ -352,10 +350,11 @@ new pg.Pool({ connectionString, connectionTimeoutMillis: 5000, lock_timeout: 100
 - **The mock differs in four ways:** `tx.query` rejects, default times are the epoch, event ids are
   `mock-<seq>`, and an object's keys come back in the order written, where `jsonb` sorts them.
 
-## Design
+## History
 
-The full design, from the lock key to what redaction does not reach, is in
-[docs/design.md](https://github.com/magna-illusions/petit-journal/blob/main/docs/design.md).
+petit-journal was developed inside a private codebase, where it runs in production. The earlier
+history is tied to that code, so this repository starts from a single commit. Everything after it
+happens here in the open.
 
 ## License
 
